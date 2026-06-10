@@ -1,0 +1,72 @@
+{
+  "projectType": "api-service",
+  "projectName": "Mireye Earth",
+  "projectDescription": "A geospatial data API that returns provenance-tagged terrain, risk, and environmental data for any US coordinate from authoritative federal datasets, with per-field citations for audit trails.",
+  "theme": "luma",
+  "primaryColor": "#2563EB",
+  "lightColor": "#EFF6FF",
+  "darkColor": "#1E3A8A",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["introduction", "quickstart"]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": ["concepts/provenance", "concepts/fields-presets", "concepts/confidence"]
+          },
+          {
+            "group": "Use Cases",
+            "pages": ["use-cases/insurance", "use-cases/lending", "use-cases/agents"]
+          },
+          {
+            "group": "MCP Integration",
+            "pages": ["mcp/installation", "mcp/tools", "mcp/troubleshooting"]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api-reference/ask",
+              "api-reference/fetch",
+              "api-reference/meta-fields"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "api-reference/field-catalog",
+              "api-reference/errors"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Natural-language Q&A over any US coordinate with cited answers (POST /v1/ask)",
+    "Deterministic field-level data access with 47+ catalog fields and 8 presets (POST /v1/fetch)",
+    "Per-field provenance — source, source_url, fetched_at, and confidence on every value",
+    "Authoritative federal data only: USGS, NOAA, USDA, USFS, EPA, EIA, FAA, and more",
+    "Honest partial-failure semantics — failed fields surface in partial_failures, never silently dropped",
+    "MCP server for Claude Desktop, Cursor, and custom AI agents",
+    "Field catalog endpoint with ETag caching for long-lived clients (GET /v1/meta/fields)",
+    "US-only coverage with structured coordinate validation and error responses"
+  ],
+  "publicApiSurface": [
+    "POST /v1/ask — natural-language Q&A with citations",
+    "POST /v1/fetch — deterministic per-field data with provenance",
+    "GET /v1/meta/fields — versioned field and preset catalog",
+    "MCP tool: ask",
+    "MCP tool: fetch",
+    "Presets: terrain, flood_risk, wildfire_underwrite, land_cover, site_selection, building_lookup, utilities, boundaries"
+  ]
+}

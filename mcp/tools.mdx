@@ -1,0 +1,109 @@
+---
+title: "Mireye Earth MCP tools: ask and fetch reference"
+description: "The two Mireye Earth MCP tools — ask for natural-language questions and fetch for structured field access — their input schemas and when to use each."
+---
+
+The Mireye Earth MCP server provides two tools — `ask` and `fetch`. Both operate on US coordinates and return per-field provenance, but they serve different purposes: `ask` answers natural-language questions with cited prose, while `fetch` returns structured field values for programmatic use.
+
+## Tool: ask
+
+Use `ask` when the caller has a specific question about a place — for example, "is this in a flood zone?" or "what's the wildfire risk here?" The tool determines which fields are relevant, fetches them, and returns a cited answer in plain prose.
+
+```
+ask(lat, lng, question)
+```
+
+<ParamField path="lat" type="number" required>
+  Latitude of the coordinate. Must be in `[18, 72]`.
+</ParamField>
+
+<ParamField path="lng" type="number" required>
+  Longitude of the coordinate. Must be in `[-180, -65]`.
+</ParamField>
+
+<ParamField path="question" type="string" required>
+  Natural-language question about the coordinate.
+</ParamField>
+
+The tool returns the answer as cited prose along with per-source provenance:
+
+```json
+{
+  "answer": "The elevation at 40.7128, -74.0060 is 13.15 meters above NAVD88...",
+  "confidence": "HIGH",
+  "citations": [
+    {
+      "source": "USGS_3DEP",
+      "source_url": "https://www.usgs.gov/3d-elevation-program",
+      "fields": ["elevation"],
+      "fetched_at": "2026-05-24T22:14:01.882Z",
+      "confidence": "HIGH"
+    }
+  ],
+  "fields_used": ["elevation"]
+}
+```
+
+## Tool: fetch
+
+Use `fetch` when you know which fields you need, or when you're powering a workflow that consumes structured values — a scoring pipeline, a data export, or an underwriting calculation. Each field in the response includes its value, source, and confidence.
+
+```
+fetch(lat, lng, fields?, preset?)
+```
+
+<ParamField path="lat" type="number" required>
+  Latitude of the coordinate. Must be in `[18, 72]`.
+</ParamField>
+
+<ParamField path="lng" type="number" required>
+  Longitude of the coordinate. Must be in `[-180, -65]`.
+</ParamField>
+
+<ParamField path="fields" type="string[]">
+  List of catalog field names to fetch. See [Field discovery](#field-discovery) for how to look up available names.
+</ParamField>
+
+<ParamField path="preset" type="string">
+  A named bundle of related fields. One of: `terrain`, `flood_risk`, `wildfire_underwrite`, `land_cover`, `site_selection`, `building_lookup`, `utilities`, `boundaries`.
+</ParamField>
+
+The tool returns a `fields` map with one entry per requested field, and a `partial_failures` list for any fields that could not be fetched:
+
+```json
+{
+  "fields": {
+    "elevation": {
+      "value": 13.15,
+      "unit": "meters",
+      "source": "USGS_3DEP",
+      "source_url": "https://www.usgs.gov/3d-elevation-program",
+      "confidence": "HIGH",
+      "fetched_at": "2026-05-24T22:15:10.110Z",
+      "ttl_seconds": 31536000,
+      "notes": null
+    }
+  },
+  "partial_failures": []
+}
+```
+
+## Which tool should I use?
+
+| Situation | Use |
+|---|---|
+| Answering a question for a human | `ask` |
+| Feeding values into a scoring pipeline | `fetch` |
+| You know exactly which fields you need | `fetch` with `fields` |
+| You want a standard bundle of related fields | `fetch` with `preset` |
+| You want the agent to decide what's relevant | `ask` |
+
+## Field discovery
+
+There is no `list_fields` MCP tool. To discover available fields and presets, call the meta endpoint directly:
+
+```
+GET https://mireye-earth.fly.dev/v1/meta/fields
+```
+
+The endpoint sets a 1-hour `Cache-Control` and an `ETag`, so a long-lived agent can fetch it once at startup and reuse the result.

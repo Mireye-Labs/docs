@@ -1,0 +1,98 @@
+---
+title: "Field catalog: all 47 fields across 5 layers"
+description: "Browse every geospatial field available in Mireye Earth by layer — terrain, land cover, built environment, utilities, and parcels and boundaries."
+---
+
+The Mireye Earth field catalog contains 47 named fields across 5 layers. Each field has a flat, dot-free name (e.g., `elevation`, `coast_distance_m`, `lcms_class`), a unit, a source agency, and membership in one or more presets. Fields in the same layer are fetched in parallel, so requesting multiple fields from the same layer adds no extra latency.
+
+Use `GET /v1/meta/fields` to fetch the live machine-readable version of this catalog. The page below renders the same data for human browsing.
+
+<AccordionGroup>
+  <Accordion title="Layer 1 — Terrain">
+    Topographic, hydrologic, soil, and coastal fields derived from USGS, NOAA, USDA, USFWS, and JRC sources.
+
+    | Field | Unit | Source |
+    |-------|------|--------|
+    | `elevation` | meters | USGS 3DEP |
+    | `slope_degrees` | degrees | USGS 3DEP |
+    | `aspect_cardinal` | enum | USGS 3DEP |
+    | `soil_map_unit_name` | string | USDA SSURGO |
+    | `soil_drainage_class` | enum | USDA SSURGO |
+    | `soil_k_factor` | float | USDA SSURGO |
+    | `bedrock_depth_cm` | cm | USDA SSURGO / Pelletier |
+    | `nearest_flowline_name` | string | USGS NHDPlus HR |
+    | `nearest_waterbody_name` | string | USGS NHDPlus HR |
+    | `huc_12_name` | string | USGS WBD |
+    | `within_floodplain_polygon` | bool | USGS NHDPlus HR |
+    | `coast_distance_m` | meters | NOAA CUSP |
+    | `coast_bearing_degrees` | degrees | NOAA CUSP |
+    | `is_inland` | bool | NOAA CUSP |
+    | `intersects_wetland` | bool | USFWS NWI |
+    | `surface_water_permanence_pct` | percent | JRC GSW |
+  </Accordion>
+
+  <Accordion title="Layer 2 — Land Cover">
+    Vegetation, land use, and crop fields derived from USFS LCMS, NLCD Tree Canopy Cover, Sentinel-2, and USDA CDL.
+
+    | Field | Unit | Source |
+    |-------|------|--------|
+    | `lcms_class` | enum | USFS LCMS |
+    | `lcms_year` | year | USFS LCMS |
+    | `land_use_class` | enum | USFS LCMS |
+    | `change_class` | enum | USFS LCMS |
+    | `tree_canopy_pct` | percent | USFS NLCD TCC |
+    | `ndvi_current` | ratio | Sentinel-2 |
+    | `ndvi_change_5y` | ratio | Sentinel-2 |
+    | `dynamic_world_class` | enum | Dynamic World |
+    | `cdl_class` | enum | USDA CDL |
+    | `is_cultivated` | bool | USDA CDL |
+    | `dominant_crop_5y` | string | USDA CDL |
+  </Accordion>
+
+  <Accordion title="Layer 3 — Built Environment">
+    Building footprints, road network, and bridge data from Overture Maps and FHWA NBI. Complex fields (`primary_building`, `nearest_major_road`, `nearest_bridge`) return structured objects rather than flat scalars.
+
+    | Field | Unit | Source |
+    |-------|------|--------|
+    | `primary_building` | object | Overture + FEMA |
+    | `nearby_buildings_count` | count | Overture |
+    | `nearest_major_road` | object | Overture |
+    | `nearest_major_road_distance_m` | meters | Overture |
+    | `nearest_bridge` | object | FHWA NBI |
+    | `bridges_within_500m_count` | count | FHWA NBI |
+  </Accordion>
+
+  <Accordion title="Layer 4 — Utilities">
+    Energy infrastructure, transportation, and logistics proximity fields from EIA, BTS, FAA, and USGS.
+
+    | Field | Unit | Source |
+    |-------|------|--------|
+    | `nearest_power_plant` | object | EIA Energy Atlas |
+    | `plants_within_50km_count` | count | EIA Energy Atlas |
+    | `nearest_transmission_line` | object | EIA Energy Atlas |
+    | `nearest_transmission_line_distance_m` | meters | EIA Energy Atlas |
+    | `nearest_gas_pipeline` | object | EIA Energy Atlas |
+    | `nearest_petroleum_pipeline` | object | EIA Energy Atlas |
+    | `nearest_rail_line` | object | BTS NTAD |
+    | `nearest_airport` | object | FAA NASR |
+    | `nearest_port` | object | BTS |
+    | `nearest_usgs_stream_gage` | object | USGS |
+  </Accordion>
+
+  <Accordion title="Layer 5 — Parcels and Boundaries">
+    Political geography, Census identifiers, and conservation easement data from US Census TIGER and USGS PAD-US.
+
+    | Field | Unit | Source |
+    |-------|------|--------|
+    | `political_region` | string | US Census TIGER |
+    | `political_county` | string | US Census TIGER |
+    | `political_locality` | string | US Census TIGER |
+    | `tract_geoid` | string | US Census TIGER |
+    | `block_group_geoid` | string | US Census TIGER |
+    | `conservation_easement` | bool | USGS PAD-US |
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+  The live catalog at `GET /v1/meta/fields` is the authoritative source. Field names, units, and sources shown here reflect V1 of the catalog.
+</Note>

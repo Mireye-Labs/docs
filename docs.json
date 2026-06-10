@@ -1,0 +1,73 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "Mireye Earth",
+  "theme": "luma",
+  "colors": {
+    "primary": "#2563EB",
+    "light": "#EFF6FF",
+    "dark": "#1E3A8A"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/mireye/mireye-earth"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["introduction", "quickstart"]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/provenance",
+              "concepts/fields-presets",
+              "concepts/confidence"
+            ]
+          },
+          {
+            "group": "Use Cases",
+            "pages": [
+              "use-cases/insurance",
+              "use-cases/lending",
+              "use-cases/agents"
+            ]
+          },
+          {
+            "group": "MCP Integration",
+            "pages": [
+              "mcp/installation",
+              "mcp/tools",
+              "mcp/troubleshooting"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api-reference/ask",
+              "api-reference/fetch",
+              "api-reference/meta-fields"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "api-reference/field-catalog",
+              "api-reference/errors"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

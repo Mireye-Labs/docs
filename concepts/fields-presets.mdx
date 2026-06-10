@@ -1,0 +1,149 @@
+---
+title: "Fields and presets in the Mireye catalog"
+description: "Mireye exposes 47 named fields across 5 layers. Request any combination by name, or use one of 8 presets that bundle fields for common use cases."
+---
+
+The Mireye field catalog contains 47 named fields organized across five layers: terrain, land cover, built environment, utilities, and parcels. You can request any subset of these fields by name in a single `/v1/fetch` call, or use one of eight presets that bundle fields for common workflows. Presets and individual field names can be combined in the same request, so you can extend a standard bundle with the specific fields your application needs.
+
+## Field naming
+
+All field names are flat, dot-free strings — for example `elevation`, `coast_distance_m`, and `lcms_class`. Pass them as a JSON array in the `fields` key of your `/v1/fetch` request body.
+
+```json
+{
+  "lat": 40.7128,
+  "lng": -74.0060,
+  "fields": ["elevation", "coast_distance_m", "within_floodplain_polygon"]
+}
+```
+
+Unknown field names return `400 fields_unknown` with a `fields_unknown` array listing exactly which names failed — so you get precise feedback rather than a generic error.
+
+## The five layers
+
+Mireye fetches fields within each layer in parallel, so requesting more fields from the same layer costs no extra latency. Fields in different layers may have different fetch times.
+
+<AccordionGroup>
+  <Accordion title="terrain">
+    Elevation, slope, aspect, soil drainage class, soil map unit, bedrock depth, hydrography (nearest flowline, nearest waterbody, HUC-12 watershed), coastline distance and bearing, floodplain intersection, wetland intersection, and surface water permanence.
+
+    Representative fields: `elevation`, `slope_degrees`, `coast_distance_m`, `within_floodplain_polygon`, `intersects_wetland`, `surface_water_permanence_pct`.
+  </Accordion>
+
+  <Accordion title="land_cover">
+    USFS Landscape Change Monitoring System (LCMS) land-cover and land-use class, vegetation indices (NDVI current and 5-year change), tree canopy cover, USDA Cropland Data Layer (CDL) class, and dominant crop over the past five years.
+
+    Representative fields: `lcms_class`, `tree_canopy_pct`, `ndvi_current`, `ndvi_change_5y`, `cdl_class`, `dominant_crop_5y`.
+  </Accordion>
+
+  <Accordion title="built_environment">
+    Building attributes from Overture Maps joined with FEMA structure data — height, floor count, footprint area, and classification. Nearest major road name and distance. Nearest bridge from the FHWA National Bridge Inventory.
+
+    Representative fields: `primary_building_height_m`, `primary_building_overture_class`, `nearest_major_road_distance_m`, `nearest_bridge_name`.
+  </Accordion>
+
+  <Accordion title="utilities">
+    Nearest power plant (name, distance, primary fuel, nameplate capacity), nearest transmission line, nearest natural gas pipeline, nearest public water system, nearest rail line, nearest airport, and nearest port.
+
+    Representative fields: `nearest_power_plant_name`, `nearest_power_plant_distance_m`, `nearest_transmission_line_distance_m`, `nearest_gas_pipeline_distance_m`, `nearest_airport_distance_m`.
+  </Accordion>
+
+  <Accordion title="parcels">
+    Political boundaries at state, county, and locality level from US Census TIGER. Census tract GEOID from the US Census Geocoder. Conservation easement intersection and easement holder from USGS PAD-US.
+
+    Representative fields: `political_region`, `political_county`, `tract_geoid`, `conservation_easement`.
+  </Accordion>
+</AccordionGroup>
+
+## Presets
+
+A preset expands to a predefined list of fields. Pass the preset name in the `preset` key of your request body.
+
+```bash
+curl -s https://mireye-earth.fly.dev/v1/fetch \
+  -H 'content-type: application/json' \
+  -d '{"lat": 29.7604, "lng": -95.3698, "preset": "flood_risk"}'
+```
+
+You can combine a preset with additional fields in the same request — the final field list is the union of both:
+
+```json
+{
+  "lat": 29.7604,
+  "lng": -95.3698,
+  "preset": "flood_risk",
+  "fields": ["slope_degrees"]
+}
+```
+
+The eight available presets are:
+
+<AccordionGroup>
+  <Accordion title="terrain">
+    A baseline terrain profile. Expands to: `elevation`, `slope_degrees`, `aspect_cardinal`, `soil_drainage_class`, `bedrock_depth_cm`.
+
+    Use this when you need raw physical characteristics of a site without risk or land-cover context.
+  </Accordion>
+
+  <Accordion title="flood_risk">
+    Fields needed to assess flood exposure. Expands to: `elevation`, `coast_distance_m`, `within_floodplain_polygon`, `intersects_wetland`, `surface_water_permanence_pct`, `nearest_waterbody_name`.
+
+    Use this for flood underwriting triage, site screening, or as the starting point for a flood-zone inquiry.
+  </Accordion>
+
+  <Accordion title="wildfire_underwrite">
+    Fields used in wildfire exposure scoring. Expands to: `lcms_class`, `tree_canopy_pct`, `ndvi_current`, `ndvi_change_5y`, `slope_degrees`, `elevation`.
+
+    Use this for wildfire underwriting workflows or fuel-load assessments.
+  </Accordion>
+
+  <Accordion title="land_cover">
+    A full land-cover snapshot. Expands to: `lcms_class`, `land_use_class`, `tree_canopy_pct`, `cdl_class`, `dominant_crop_5y`.
+
+    Use this for environmental due diligence, conservation finance, or agricultural lending.
+  </Accordion>
+
+  <Accordion title="site_selection">
+    A broad site-selection bundle. Expands to: `elevation`, `slope_degrees`, `lcms_class`, `within_floodplain_polygon`, `nearest_major_road_distance_m`, `nearest_transmission_line_distance_m`, `intersects_conservation_easement`.
+
+    Use this when screening sites for development, energy infrastructure, or logistics.
+  </Accordion>
+
+  <Accordion title="building_lookup">
+    Building-centric fields for a specific point. Expands to: `primary_building_height_m`, `primary_building_num_floors`, `primary_building_footprint_sqm`, `primary_building_overture_class`, `nearest_major_road_name`, `nearest_major_road_distance_m`, `nearest_bridge_name`.
+
+    Use this for property-level due diligence or building-permit research.
+  </Accordion>
+
+  <Accordion title="utilities">
+    Infrastructure proximity for a point. Expands to: `nearest_power_plant_name`, `nearest_power_plant_distance_m`, `nearest_transmission_line_distance_m`, `nearest_gas_pipeline_distance_m`, `nearest_public_water_system_name`, `nearest_rail_line_distance_m`, `nearest_airport_name`, `nearest_port_name`.
+
+    Use this for critical infrastructure proximity analysis or site resilience assessments.
+  </Accordion>
+
+  <Accordion title="boundaries">
+    Political and administrative boundaries for a point. Expands to: `political_region`, `political_county`, `political_locality`, `tract_geoid`, `intersects_conservation_easement`, `easement_holder`.
+
+    Use this for regulatory jurisdiction lookups, census geography joins, or easement screening.
+  </Accordion>
+</AccordionGroup>
+
+### Field limits
+
+Each request may include at most **50 fields** after preset expansion and deduplication. Requests over this limit return:
+
+```json
+{"error": "fields_too_many", "max": 50, "requested": 73}
+```
+
+If your workflow requires more than 50 fields, split the request across multiple calls by layer or by use case.
+
+## Discover fields with /v1/meta/fields
+
+`GET /v1/meta/fields` returns the full machine-readable field catalog: every field name, type, unit, source, coverage area, preset assignments, and an example value. It also lists the canonical field set for every preset.
+
+```bash
+curl -s https://mireye-earth.fly.dev/v1/meta/fields | jq '.fields[] | {name, layer, unit, source}'
+```
+
+The response includes an `ETag` header. Long-lived clients and agents should cache the response and send `If-None-Match` on subsequent requests to avoid re-parsing an unchanged catalog.

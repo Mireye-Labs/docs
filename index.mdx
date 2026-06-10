@@ -1,0 +1,36 @@
+---
+title: "Mireye Earth: geospatial API with federal citations"
+description: "Geospatial data with federal citations for any US coordinate. Explore the API reference, quickstart, MCP integration, and use-case guides."
+---
+
+Mireye Earth gives you provenance-tagged geospatial data for any US coordinate — elevation, flood risk, wildfire indicators, buildings, utilities, and more — sourced exclusively from authoritative federal datasets. Every field carries a citation you can audit.
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Make your first API call in five minutes. No SDK, no install — just curl.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference/ask">
+    Endpoint schemas for /v1/ask, /v1/fetch, and /v1/meta/fields.
+  </Card>
+  <Card title="MCP Integration" icon="plug" href="/mcp/installation">
+    Use Mireye as native tools in Claude Desktop, Cursor, or custom agents.
+  </Card>
+  <Card title="Field Catalog" icon="list" href="/api-reference/field-catalog">
+    Browse all 47 fields across 5 layers and 8 presets.
+  </Card>
+</CardGroup>
+
+<Steps>
+  <Step title="Call the API">
+    Hit `https://mireye-earth.fly.dev/v1/ask` with a coordinate and a question. No API key needed in V1.
+  </Step>
+  <Step title="Read the citations">
+    Every answer includes a `citations` array — source agency, source URL, fetch timestamp, and confidence.
+  </Step>
+  <Step title="Fetch raw fields">
+    Use `/v1/fetch` with named fields or a preset to get structured values with per-field provenance.
+  </Step>
+  <Step title="Connect your agent">
+    Install the MCP server to give Claude Desktop or Cursor native access to both tools.
+  </Step>
+</Steps>

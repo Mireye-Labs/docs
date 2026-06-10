@@ -1,0 +1,95 @@
+---
+title: "Property insurance underwriting with Mireye Earth"
+description: "Fetch flood zone, wildfire, and building risk signals for P&C underwriting — with federal-source citations that satisfy regulatory audits."
+---
+
+Insurance underwriters need more than a risk score — they need a per-field audit trail they can hand to a regulator. Mireye Earth returns flood zone status, wildfire indicators, building data, and soil risk signals sourced directly from USGS, NOAA, USDA, and USFS, with a `source_url` and `fetched_at` timestamp on every value. When a state regulator asks where a figure came from, you click the link.
+
+## Key fields for underwriting
+
+<AccordionGroup>
+  <Accordion title="Flood exposure">
+    | Field | What it answers |
+    |---|---|
+    | `within_floodplain_polygon` | Is the property inside a 100-year floodplain polygon? (USGS NHDPlus HR) |
+    | `coast_distance_m` | How far from the nearest shoreline? Determines storm-surge exposure. (NOAA CUSP) |
+    | `surface_water_permanence_pct` | What percentage of the time is surface water present at the property edge? (JRC GSW) |
+  </Accordion>
+
+  <Accordion title="Wildfire exposure">
+    | Field | What it answers |
+    |---|---|
+    | `slope_degrees` | What is the terrain slope? Steeper slope accelerates fire spread and increases runoff risk. (USGS 3DEP) |
+    | `tree_canopy_pct` | What fraction of the area is covered by tree canopy? High canopy = high fuel load. (USFS NLCD TCC) |
+    | `ndvi_current` | Current vegetation greenness index — a proxy for live fuel moisture. (Sentinel-2) |
+    | `ndvi_change_5y` | How has vegetation density changed over 5 years? Dieback signals increased dry-fuel accumulation. (Sentinel-2) |
+  </Accordion>
+
+  <Accordion title="Building and structure">
+    | Field | What it answers |
+    |---|---|
+    | `primary_building` | Building height, footprint area, and FEMA occupancy class for replacement-cost modeling. (Overture + FEMA USA Structures) |
+  </Accordion>
+
+  <Accordion title="Geotechnical risk">
+    | Field | What it answers |
+    |---|---|
+    | `bedrock_depth_cm` | How deep to bedrock? Shallow bedrock limits foundation options; a proxy for earthquake vulnerability. (USDA SSURGO / Pelletier) |
+    | `soil_drainage_class` | NRCS hydrologic group — how quickly does the soil drain? Poor drainage amplifies flood exposure. (USDA SSURGO) |
+    | `soil_k_factor` | Soil erodibility factor. High K-factor indicates erosion and subsidence risk. (USDA SSURGO) |
+  </Accordion>
+
+  <Accordion title="Access and infrastructure">
+    | Field | What it answers |
+    |---|---|
+    | `nearest_bridge` | Nearest bridge with NBI condition rating and year built — critical for claim-event access planning. (FHWA NBI) |
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+Every field's `source_url` points to the originating federal agency — USGS, NOAA, USDA, or USFS — so auditors can independently verify any value without contacting Mireye.
+</Note>
+
+## Wildfire underwriting with a preset
+
+The `wildfire_underwrite` preset returns the six fields most relevant to wildfire exposure in a single call: `lcms_class`, `tree_canopy_pct`, `ndvi_current`, `ndvi_change_5y`, `slope_degrees`, and `elevation`.
+
+```bash
+curl -s https://mireye-earth.fly.dev/v1/fetch \
+  -H 'content-type: application/json' \
+  -d '{"lat": 34.0522, "lng": -118.2437, "preset": "wildfire_underwrite"}' | jq
+```
+
+The response includes per-field provenance for all six values. `tree_canopy_pct` from USFS NLCD TCC and `ndvi_current` from Sentinel-2 together give you a live-fuel proxy; `ndvi_change_5y` flags recent dieback that dries the fuel load further; `slope_degrees` from USGS 3DEP tells you how fast a fire would travel uphill.
+
+## Flood risk with a preset
+
+The `flood_risk` preset returns elevation, coast distance, floodplain status, wetland intersect, surface water permanence, and the nearest named waterbody in one call.
+
+```bash
+curl -s https://mireye-earth.fly.dev/v1/fetch \
+  -H 'content-type: application/json' \
+  -d '{"lat": 29.7604, "lng": -95.3698, "preset": "flood_risk"}' | jq
+```
+
+`within_floodplain_polygon` is sourced from USGS NHDPlus HR. The `source_url` in the response links directly to the USGS dataset page so you can confirm methodology independently.
+
+## Natural-language underwriting query
+
+Use `/v1/ask` to get a cited narrative answer suitable for pasting directly into a loss memo or underwriting note. The planner selects the right fields automatically based on the question.
+
+```bash
+curl -s https://mireye-earth.fly.dev/v1/ask \
+  -H 'content-type: application/json' \
+  -d '{
+    "lat": 29.7604,
+    "lng": -95.3698,
+    "question": "What is the flood and wildfire risk at this property?"
+  }' | jq
+```
+
+The response includes an `answer` string with all values cited inline, and a `citations` array with `source`, `source_url`, and `fetched_at` for every field used.
+
+## Bulk processing
+
+For batches of addresses, geocode each to a lat/lng coordinate — the US Census Geocoder is free and works at scale — then call `/v1/fetch` in parallel for each coordinate. Mireye caches responses server-side, so repeated queries for the same coordinate (common when re-scoring the same portfolio) return quickly. Use an async HTTP client or a thread pool to maximize throughput across the batch.

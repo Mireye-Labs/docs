@@ -1,0 +1,130 @@
+---
+title: "Mireye Earth error codes and response shapes"
+description: "Mireye Earth returns structured JSON errors for all 4xx and 5xx responses. Learn each error code, its cause, and how to recover from it."
+---
+
+Mireye Earth returns structured JSON error objects for all 4xx and 5xx responses. Every error has an `error` code string and a `message`. When a field cannot be fetched during an otherwise successful request, the failure appears in `partial_failures` — not as an HTTP error — because the fields that did succeed are still returned.
+
+## 4xx client errors
+
+These errors indicate a problem with the request. Fix the input and retry.
+
+### `coord_out_of_bounds` (400)
+
+```json
+{
+  "error": "coord_out_of_bounds",
+  "message": "lat=48.86, lng=2.35 outside US envelope [18, 72] / [-180, -65]"
+}
+```
+
+**Cause:** The latitude or longitude is outside the US-only accepted range.
+
+**Fix:** Check that your coordinates are within the continental US, Alaska, Hawaii, or US territories. You can fetch the exact accepted bounds from `GET /v1/meta/fields` under the `us_envelope` key.
+
+---
+
+### `fields_unknown` (400)
+
+```json
+{
+  "error": "fields_unknown",
+  "message": "Unknown field names: ['elevation_m', 'flood_zone']",
+  "fields_unknown": ["elevation_m", "flood_zone"]
+}
+```
+
+**Cause:** One or more field names in your request are not in the catalog.
+
+**Fix:** Check the [field catalog](/api-reference/field-catalog) or call `GET /v1/meta/fields` to get the full list of valid names. Common mistakes:
+
+- `elevation_m` → `elevation` (no unit suffix in the name)
+- `flood_zone` → `within_floodplain_polygon` (use the full predicate name)
+- `slope` → `slope_degrees` (unit suffix is required)
+
+---
+
+### `fields_too_many` (400)
+
+```json
+{
+  "error": "fields_too_many",
+  "message": "Requested 73 fields; max is 50.",
+  "max": 50,
+  "requested": 73
+}
+```
+
+**Cause:** The total number of fields after preset expansion exceeds 50.
+
+**Fix:** Split your request into multiple calls. If you are using a preset with additional `fields`, check the preset expansion in `GET /v1/meta/fields` to see how many fields it contributes.
+
+---
+
+### `no_fields_requested` (400)
+
+```json
+{
+  "error": "no_fields_requested",
+  "message": "Provide `fields` and/or `preset`."
+}
+```
+
+**Cause:** You called `/v1/fetch` without including either a `fields` array or a `preset` string.
+
+**Fix:** Add at least one of `fields` or `preset` to the request body.
+
+---
+
+## 5xx server errors
+
+### `internal` (500)
+
+```json
+{
+  "error": "internal",
+  "request_id": "req_a1b2c3d4e5f6"
+}
+```
+
+**Cause:** An unexpected failure in the API orchestrator.
+
+**Fix:** Include the `request_id` value when reporting the issue. This ID maps to a server-side log line that contains the full stack trace and the input that triggered the error.
+
+---
+
+## Partial failures (in 200 responses)
+
+A 200 response from `/v1/fetch` or `/v1/ask` can still contain failed fields. When any individual source is unavailable or returns no data at your coordinate, those fields appear in `partial_failures` rather than causing the whole request to fail.
+
+```json
+{
+  "partial_failures": [
+    {
+      "field": "lcms_class",
+      "source": "USFS_LCMS",
+      "error": "TimeoutError: source timed out after 10s",
+      "retryable": true
+    }
+  ]
+}
+```
+
+- If `retryable: true`, the source was temporarily unavailable. Retry the request for that field after a brief delay.
+- If `retryable: false`, the source returned a permanent error — for example, the coordinate has no coverage for that field. Retrying will not help.
+
+<Tip>
+  Check `partial_failures` after every request. If the array is empty, all requested fields were fetched successfully and you do not need to cross-check against your request.
+</Tip>
+
+---
+
+## X-Request-ID header
+
+Every response — success and error — includes an `X-Request-ID` header. If you supply your own `X-Request-ID` header in a request, Mireye echoes it back unchanged. If you do not supply one, Mireye generates one for you.
+
+Use this header to correlate log lines across your application and Mireye's server logs. When reporting a `500 internal` error, always include:
+
+- The `X-Request-ID` value from the response.
+- The request body (sanitize any sensitive data).
+- The approximate UTC timestamp of the request.

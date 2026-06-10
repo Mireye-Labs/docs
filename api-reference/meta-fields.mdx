@@ -1,0 +1,102 @@
+---
+title: "GET /v1/meta/fields — field and preset catalog"
+description: "Fetch the machine-readable catalog of all 47 fields with units and sources, all 8 preset expansions, and the US coordinate envelope. ETag-cached."
+---
+
+`GET /v1/meta/fields` returns the complete machine-readable catalog — all 47 fields with descriptions, units, source agencies, source URLs, and preset memberships, plus the 8 preset expansions and the US coordinate envelope. The response is ETag-cached; send `If-None-Match` on subsequent requests to avoid downloading a catalog you already have. This endpoint is served from memory and responds in under 50 ms.
+
+## Request
+
+No request body. Send a plain GET.
+
+```bash
+curl -i https://mireye-earth.fly.dev/v1/meta/fields
+```
+
+On subsequent requests, use the ETag from the first response to skip a redundant download:
+
+```bash
+# Use the ETag value from your first response:
+curl -i https://mireye-earth.fly.dev/v1/meta/fields \
+  -H 'if-none-match: "abc123..."'
+# Returns 304 Not Modified if the catalog has not changed
+```
+
+## Response headers
+
+| Header | Value |
+|--------|-------|
+| `ETag` | SHA-256 of the response body as a quoted string (e.g., `"a3f9..."`). |
+| `Cache-Control` | `public, max-age=3600` — clients may cache the response for up to one hour. |
+
+## Response (200)
+
+The response body is a JSON object. The `fields` array contains one entry per catalog field; the `presets` object maps preset names to their field lists.
+
+```json
+{
+  "version": "0.1.0",
+  "us_envelope": {
+    "lat_min": 18,
+    "lat_max": 72,
+    "lng_min": -180,
+    "lng_max": -65
+  },
+  "fields": [
+    {
+      "name": "elevation",
+      "type": "float",
+      "unit": "meters",
+      "description": "Elevation above sea level at the query point (NAVD88 vertical datum).",
+      "source": "USGS_3DEP",
+      "source_url": "https://www.usgs.gov/3d-elevation-program",
+      "confidence_default": "HIGH",
+      "presets": ["terrain", "flood_risk", "site_selection"],
+      "coverage": "CONUS + AK + HI"
+    }
+  ],
+  "presets": {
+    "flood_risk": [
+      "elevation",
+      "within_floodplain_polygon",
+      "coast_distance_m",
+      "surface_water_permanence_pct",
+      "nearest_waterbody_name",
+      "intersects_wetland"
+    ],
+    "terrain": [
+      "elevation",
+      "slope_degrees",
+      "aspect_cardinal",
+      "soil_drainage_class",
+      "bedrock_depth_cm"
+    ]
+  }
+}
+```
+
+<ResponseField name="version" type="string">
+  Catalog schema version (SemVer). Bumps on breaking changes such as field renames or type changes.
+</ResponseField>
+
+<ResponseField name="us_envelope" type="object">
+  The coordinate bounds Mireye accepts: `lat_min`, `lat_max`, `lng_min`, `lng_max`. Use this to validate coordinates client-side before sending requests.
+</ResponseField>
+
+<ResponseField name="fields" type="array">
+  All catalog fields. Each entry includes `name`, `type`, `unit`, `description`, `source`, `source_url`, `confidence_default`, `presets` (array of preset names the field belongs to), and `coverage`.
+</ResponseField>
+
+<ResponseField name="presets" type="object">
+  Maps each preset name to the ordered list of field names it expands to. Use this to show users what a preset includes before they request it.
+</ResponseField>
+
+## Caching for long-lived clients
+
+Fetch the catalog once at startup, store the `ETag` header value, and send `If-None-Match: <etag>` on every subsequent request. A `304 Not Modified` response means the catalog is unchanged — keep using your cached version without parsing a new body. This pattern keeps bandwidth near zero for services that poll the catalog hourly.
+
+<Tip>
+  The catalog changes only when the schema version bumps — field renames, type changes, or new fields. For most integrations, a single fetch at startup is sufficient.
+</Tip>
+
+The `Cache-Control: public, max-age=3600` header means any HTTP cache in your infrastructure (CDN, reverse proxy, browser) will also serve the cached response for up to one hour automatically.

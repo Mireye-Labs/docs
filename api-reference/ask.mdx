@@ -1,0 +1,140 @@
+---
+title: "POST /v1/ask — natural-language geospatial Q&A"
+description: "Send a US coordinate and a question; get a cited prose answer backed by federal data, with per-source provenance on every citation."
+---
+
+`POST /v1/ask` accepts a US coordinate and a natural-language question. A planner model picks the relevant fields from the catalog, fetches them in parallel, and a synthesizer model writes a cited prose answer. Every citation names the federal source, the source URL, and when the value was fetched. Expect 2–6 s on warm requests and up to 60 s on a cold start.
+
+## Request
+
+**Endpoint:** `POST https://mireye-earth.fly.dev/v1/ask`
+
+<ParamField body="lat" type="number" required>
+  Latitude of the query point. Must be within `[18, 72]` (US envelope).
+</ParamField>
+
+<ParamField body="lng" type="number" required>
+  Longitude of the query point. Must be within `[-180, -65]` (US envelope).
+</ParamField>
+
+<ParamField body="question" type="string" required>
+  Natural-language question about the coordinate. Maximum 2000 characters.
+</ParamField>
+
+<ParamField body="include_trace" type="boolean" default="false">
+  When `true`, the response includes a `trace` object with planner reasoning and a latency breakdown. Useful for debugging which fields the planner selected and why.
+</ParamField>
+
+```bash
+curl -s https://mireye-earth.fly.dev/v1/ask \
+  -H 'content-type: application/json' \
+  -d '{
+    "lat": 40.7128,
+    "lng": -74.0060,
+    "question": "Is this property in a flood zone?"
+  }' | jq
+```
+
+## Response (200)
+
+```json
+{
+  "lat": 40.7128,
+  "lng": -74.006,
+  "question": "Is this property in a flood zone?",
+  "answered_at": "2026-05-24T22:00:00Z",
+  "answer": "This Manhattan address (40.7128, -74.006) is not currently in a designated 100-year floodplain per USGS NHDPlus data, but it sits 764m from the East River shoreline at an elevation of only 13.15m.",
+  "confidence": "HIGH",
+  "citations": [
+    {
+      "source": "USGS_NHDPLUS_HR",
+      "source_url": "https://hydro.nationalmap.gov/arcgis/rest/services/NHDPlus_HR/MapServer",
+      "fields": ["within_floodplain_polygon"],
+      "fetched_at": "2026-05-24T22:00:00Z",
+      "confidence": "HIGH"
+    },
+    {
+      "source": "USGS_3DEP",
+      "source_url": "https://www.usgs.gov/3d-elevation-program",
+      "fields": ["elevation"],
+      "fetched_at": "2026-05-24T22:00:00Z",
+      "confidence": "HIGH"
+    }
+  ],
+  "fields_used": ["within_floodplain_polygon", "elevation", "coast_distance_m"],
+  "partial_failures": []
+}
+```
+
+<ResponseField name="answered_at" type="string">
+  ISO 8601 UTC timestamp of when the answer was generated.
+</ResponseField>
+
+<ResponseField name="answer" type="string">
+  Prose answer citing the fetched values. Written by the synthesizer model based on the fields the planner selected.
+</ResponseField>
+
+<ResponseField name="confidence" type="string">
+  Overall confidence in the answer: `HIGH`, `MEDIUM`, or `LOW`. Drops to `MEDIUM` if any field was downgraded or if more than 30% of planned fields were unavailable.
+</ResponseField>
+
+<ResponseField name="citations" type="array">
+  One citation object per source used. Groups all fields from the same source into a single citation.
+
+  <Expandable title="citation object">
+    <ResponseField name="citations[].source" type="string">
+      Source agency identifier (e.g., `USGS_3DEP`, `NOAA_CUSP`).
+    </ResponseField>
+
+    <ResponseField name="citations[].source_url" type="string">
+      Canonical upstream URL for the dataset. Always an HTTPS URL pointing to the originating agency.
+    </ResponseField>
+
+    <ResponseField name="citations[].fields" type="array">
+      Field names this source provided (e.g., `["elevation"]`).
+    </ResponseField>
+
+    <ResponseField name="citations[].fetched_at" type="string">
+      ISO 8601 UTC timestamp of when this source was queried.
+    </ResponseField>
+
+    <ResponseField name="citations[].confidence" type="string">
+      Confidence for this source: `HIGH`, `MEDIUM`, or `LOW`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="fields_used" type="array">
+  List of field names the answer depends on. A flat array of strings — use this for quick filtering without parsing full citation objects.
+</ResponseField>
+
+<ResponseField name="partial_failures" type="array">
+  Fields that could not be fetched. Empty array if all planned fields succeeded. The answer prose notes any missing data explicitly; `confidence` drops one bucket if more than 30% of fields failed.
+</ResponseField>
+
+## Trace (optional)
+
+When you set `include_trace: true`, the response includes a `trace` object with planner-internal diagnostics.
+
+```json
+{
+  "trace": {
+    "planner_model": "claude-sonnet-4-6",
+    "synthesizer_model": "claude-sonnet-4-6",
+    "planner_reasoning": "Flood-zone questions need floodplain intersect, elevation, coast distance...",
+    "fields_requested": ["within_floodplain_polygon", "elevation", "coast_distance_m"],
+    "latency_ms": { "fetch": 1420, "synthesize": 2100, "total": 3520 }
+  }
+}
+```
+
+The `planner_reasoning` field shows why the planner chose those specific fields. Use it to understand which catalog fields are most relevant to different question types, or to build your own planner prompt against `GET /v1/meta/fields`.
+
+## Error responses
+
+| Status | Error code | Meaning |
+|--------|------------|---------|
+| 400 | `coord_out_of_bounds` | Coordinate is outside the US envelope (`lat ∈ [18, 72]`, `lng ∈ [-180, -65]`). |
+| 500 | `internal` | Orchestrator crash. The response includes a `request_id` — include it when reporting the issue. |
+
+See the [error reference](/api-reference/errors) for full error shapes and recovery guidance.

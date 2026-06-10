@@ -1,0 +1,105 @@
+---
+title: "Troubleshoot the Mireye Earth MCP server"
+description: "Diagnose and fix common issues with the Mireye Earth MCP server — tools not appearing, connection timeouts, coordinate errors, and unknown fields."
+---
+
+If the Mireye Earth MCP server is not working as expected, this page covers the most common issues — tools not appearing in Claude Desktop or Cursor, connection timeouts, and structured error responses.
+
+<AccordionGroup>
+  <Accordion title="Server doesn't appear in Claude Desktop">
+    Check that `mireye-earth-mcp` resolves on the PATH used by the GUI app. Test from a terminal:
+
+    ```bash
+    which mireye-earth-mcp
+    ```
+
+    If the command returns nothing, re-install the server:
+
+    ```bash
+    uv pip install -e '.[mcp]'
+    ```
+
+    If re-installing doesn't help, use the absolute path returned by `which` in the `command` field of your config:
+
+    ```json
+    {
+      "mcpServers": {
+        "mireye-earth": {
+          "command": "/absolute/path/to/mireye-earth-mcp"
+        }
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Tools not showing after restart">
+    Watch the MCP server log:
+
+    ```
+    ~/Library/Logs/Claude/mcp-server-mireye-earth.log
+    ```
+
+    On startup, you should see a line beginning with:
+
+    ```
+    [mireye-earth-mcp] starting base_url=...
+    ```
+
+    If you see a Python `ImportError` instead, the `mcp` extra is not installed in the Python interpreter that Claude is launching. Re-install in the correct environment:
+
+    ```bash
+    uv pip install -e '.[mcp]'
+    ```
+  </Accordion>
+
+  <Accordion title="ConnectError or ReadTimeout on first call">
+    The HTTP API runs on Fly with auto-stop enabled. The first request after idle wakes the machine, which takes 5–15 seconds. If you are repeatedly hitting timeouts, increase `MIREYE_TIMEOUT_S` to `90` in your MCP config:
+
+    ```json
+    {
+      "mcpServers": {
+        "mireye-earth": {
+          "command": "mireye-earth-mcp",
+          "env": {
+            "MIREYE_TIMEOUT_S": "90"
+          }
+        }
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="HTTP 400 coord_out_of_bounds">
+    Mireye is US-only in V1. The accepted coordinate envelope is:
+
+    - `lat ∈ [18, 72]`
+    - `lng ∈ [-180, -65]`
+
+    This covers the lower 48, Alaska, Hawaii, and US territories. Coordinates outside this range return a `coord_out_of_bounds` error.
+  </Accordion>
+
+  <Accordion title="HTTP 400 fields_unknown">
+    The field name you requested is not in the catalog. Call the meta endpoint to see the canonical list:
+
+    ```
+    GET https://mireye-earth.fly.dev/v1/meta/fields
+    ```
+
+    Common surprises:
+
+    - `elevation_m` → `elevation`
+    - `floodplain` → `within_floodplain_polygon`
+  </Accordion>
+
+  <Accordion title="HTTP 4xx/5xx errors passed through from the tool">
+    The MCP server passes HTTP errors through verbatim — it does not catch or reformat them. The tool error body contains the structured `detail` returned by the API. Your agent can read `detail.error` and `detail.message` to recover programmatically.
+  </Accordion>
+
+  <Accordion title="Auth errors (401/403)">
+    V1 has no authentication. If you are seeing 401 or 403, you are hitting a private deployment that has a reverse proxy with auth in front of it. Contact the deploy operator to get access or obtain credentials.
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+  If you are using a self-hosted deployment, set `MIREYE_BASE_URL` to your deployment URL in the MCP server configuration.
+</Note>

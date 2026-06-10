@@ -1,0 +1,191 @@
+---
+title: "Quickstart: make your first Mireye Earth API call"
+description: "Make your first API call, fetch raw geospatial fields, and optionally connect the MCP server — all in under five minutes with no SDK required."
+---
+
+Mireye Earth is a geospatial data API that returns provenance-tagged terrain, flood, and environmental data for any US coordinate. This quickstart walks you through asking a natural-language question, fetching specific fields by name, using a built-in preset, and wiring up the MCP server for Claude Desktop — using only `curl` and `jq`.
+
+<Steps>
+  <Step title="Pick a coordinate">
+    Mireye Earth covers the United States only. The accepted envelope is `lat ∈ [18, 72]` and `lng ∈ [-180, -65]`, which includes the lower 48 states, Alaska, Hawaii, and US territories. Coordinates outside this range return `400 coord_out_of_bounds`.
+
+    For this guide, use a point in lower Manhattan near City Hall:
+
+    ```text
+    lat = 40.7128
+    lng = -74.0060
+    ```
+
+    You can substitute any US coordinate you like — the same steps apply.
+  </Step>
+
+  <Step title="Ask a question">
+    `POST /v1/ask` accepts a coordinate and a free-text question. Mireye selects the relevant fields, fetches them in parallel from federal sources, and writes a cited prose answer.
+
+    ```bash
+    curl -s https://mireye-earth.fly.dev/v1/ask \
+      -H 'content-type: application/json' \
+      -d '{
+        "lat": 40.7128,
+        "lng": -74.0060,
+        "question": "What is the elevation here?"
+      }' | jq
+    ```
+
+    Response:
+
+    ```json
+    {
+      "lat": 40.7128,
+      "lng": -74.006,
+      "question": "What is the elevation here?",
+      "answered_at": "2026-05-24T22:14:03.918Z",
+      "answer": "The elevation at 40.7128, -74.0060 is 13.15 meters above NAVD88 (43.1 feet), measured by the USGS 3D Elevation Program (3DEP).",
+      "confidence": "HIGH",
+      "citations": [
+        {
+          "source": "USGS_3DEP",
+          "source_url": "https://www.usgs.gov/3d-elevation-program",
+          "fields": ["elevation"],
+          "fetched_at": "2026-05-24T22:14:01.882Z",
+          "confidence": "HIGH"
+        }
+      ],
+      "fields_used": ["elevation"]
+    }
+    ```
+
+    Read the response top-to-bottom: `answer` is the prose, `confidence` summarizes the overall response, `citations` is the per-source audit trail, and `fields_used` lists the catalog fields the answer depends on.
+
+    <Note>
+      `/v1/ask` takes 2–6 seconds on a warm server because it runs a two-model pipeline: a planner selects fields, then a synthesizer writes the answer. Use `/v1/fetch` when you know exactly which fields you need and want deterministic, lower-latency responses.
+    </Note>
+  </Step>
+
+  <Step title="Fetch raw fields">
+    When you know which fields you want, call `POST /v1/fetch` directly. Pass a `fields` array with the catalog field names you need.
+
+    ```bash
+    curl -s https://mireye-earth.fly.dev/v1/fetch \
+      -H 'content-type: application/json' \
+      -d '{
+        "lat": 40.7128,
+        "lng": -74.0060,
+        "fields": ["elevation", "coast_distance_m"]
+      }' | jq
+    ```
+
+    Response:
+
+    ```json
+    {
+      "lat": 40.7128,
+      "lng": -74.006,
+      "fetched_at": "2026-05-24T22:15:11.420Z",
+      "fields": {
+        "elevation": {
+          "value": 13.15,
+          "unit": "meters",
+          "source": "USGS_3DEP",
+          "source_url": "https://www.usgs.gov/3d-elevation-program",
+          "confidence": "HIGH",
+          "fetched_at": "2026-05-24T22:15:10.110Z",
+          "ttl_seconds": 31536000,
+          "notes": null
+        },
+        "coast_distance_m": {
+          "value": 412.7,
+          "unit": "meters",
+          "source": "NOAA_CUSP",
+          "source_url": "https://shoreline.noaa.gov/data/datasheets/cusp.html",
+          "confidence": "HIGH",
+          "fetched_at": "2026-05-24T22:15:10.880Z",
+          "ttl_seconds": 31536000,
+          "notes": null
+        }
+      },
+      "partial_failures": []
+    }
+    ```
+
+    Each field is a self-contained record with its value, unit, source agency, source URL, confidence, and fetch timestamp. The `partial_failures` array is empty here. If a source times out, that field moves to `partial_failures` with `retryable: true` — the rest of the call still returns 200 with the fields that succeeded.
+
+    See the [field catalog](/api-reference/field-catalog) for the full list of 47 available field names.
+  </Step>
+
+  <Step title="Use a preset">
+    Presets expand into a curated set of fields for common workflows. Pass `"preset"` instead of `"fields"` to use one.
+
+    ```bash
+    curl -s https://mireye-earth.fly.dev/v1/fetch \
+      -H 'content-type: application/json' \
+      -d '{"lat": 40.7128, "lng": -74.0060, "preset": "flood_risk"}' | jq '.fields | keys'
+    ```
+
+    The `flood_risk` preset returns these six fields:
+
+    ```json
+    [
+      "coast_distance_m",
+      "elevation",
+      "intersects_wetland",
+      "nearest_waterbody_name",
+      "surface_water_permanence_pct",
+      "within_floodplain_polygon"
+    ]
+    ```
+
+    <Tip>
+      You can combine a preset with an explicit `fields` array in the same request. Mireye deduplicates and fetches everything together.
+    </Tip>
+
+    Eight presets are available: `terrain`, `flood_risk`, `wildfire_underwrite`, `land_cover`, `site_selection`, `building_lookup`, `utilities`, and `boundaries`. Full field expansions are listed at [POST /v1/fetch](/api-reference/fetch#presets).
+  </Step>
+
+  <Step title="Install the MCP server">
+    The MCP server exposes the same `ask` and `fetch` operations as native tools in Claude Desktop, Cursor, and any MCP-aware agent.
+
+    Install with `uv`:
+
+    ```bash
+    uv pip install 'mireye-earth[mcp]'
+    ```
+
+    Add the server to your Claude Desktop config. On macOS the file is at `~/Library/Application Support/Claude/claude_desktop_config.json`; on Windows it is at `%APPDATA%\Claude\claude_desktop_config.json`.
+
+    ```json
+    {
+      "mcpServers": {
+        "mireye-earth": {
+          "command": "mireye-earth-mcp"
+        }
+      }
+    }
+    ```
+
+    Restart Claude Desktop. Two tools appear under the plug icon: `ask` and `fetch`. You can then ask Claude something like:
+
+    > "What's the elevation at 40.7128, -74.0060?"
+
+    Claude calls the `ask` tool, receives the cited answer, and surfaces the citation in chat.
+
+    For Cursor and custom-agent setup, see [MCP installation](/mcp/installation).
+  </Step>
+</Steps>
+
+## What's next
+
+<CardGroup cols={2}>
+  <Card title="POST /v1/ask" icon="message" href="/api-reference/ask">
+    Full schema for the natural-language endpoint, including the two-model planner and synthesizer pipeline.
+  </Card>
+  <Card title="POST /v1/fetch" icon="database" href="/api-reference/fetch">
+    Field names, presets, and `partial_failures` semantics.
+  </Card>
+  <Card title="MCP tools" icon="plug" href="/mcp/tools">
+    How `ask` and `fetch` behave as MCP tools from an agent's perspective.
+  </Card>
+  <Card title="Insurance use case" icon="house-fire" href="/use-cases/insurance">
+    A worked underwriting flow with real field values and citations.
+  </Card>
+</CardGroup>

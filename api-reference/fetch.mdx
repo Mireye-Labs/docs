@@ -1,0 +1,177 @@
+---
+title: "POST /v1/fetch — structured field data with provenance"
+description: "Request named fields or a preset bundle for a US coordinate and get values with per-field source, URL, timestamp, confidence, and TTL."
+---
+
+`POST /v1/fetch` returns specific named fields — or a preset bundle — for a US coordinate. Every field in the response includes its value, unit, source, source URL, fetch timestamp, confidence, and TTL. Fields that could not be fetched appear in `partial_failures`; the rest of the response returns 200. Expect 1–3 s on warm requests.
+
+## Request
+
+**Endpoint:** `POST https://mireye-earth.fly.dev/v1/fetch`
+
+<ParamField body="lat" type="number" required>
+  Latitude of the query point. Must be within `[18, 72]` (US envelope).
+</ParamField>
+
+<ParamField body="lng" type="number" required>
+  Longitude of the query point. Must be within `[-180, -65]` (US envelope).
+</ParamField>
+
+<ParamField body="fields" type="string[]">
+  Named catalog fields to fetch. See the [field catalog](/api-reference/field-catalog) for all valid names. Can be combined with `preset` — the union is deduplicated. At least one of `fields` or `preset` is required.
+</ParamField>
+
+<ParamField body="preset" type="string">
+  A use-case bundle that expands to a predefined set of fields. One of: `terrain`, `flood_risk`, `wildfire_underwrite`, `land_cover`, `site_selection`, `building_lookup`, `utilities`, `boundaries`. Can be combined with `fields`. At least one of `fields` or `preset` is required.
+</ParamField>
+
+<Note>
+  You can send both `fields` and `preset` in the same request. The preset expands first, then the named fields union in, and the combined list is deduplicated. The total after expansion cannot exceed 50 fields.
+</Note>
+
+**Request with named fields:**
+
+```bash
+curl -s https://mireye-earth.fly.dev/v1/fetch \
+  -H 'content-type: application/json' \
+  -d '{
+    "lat": 40.7128,
+    "lng": -74.0060,
+    "fields": ["elevation", "coast_distance_m", "within_floodplain_polygon"]
+  }' | jq
+```
+
+**Request with a preset:**
+
+```bash
+curl -s https://mireye-earth.fly.dev/v1/fetch \
+  -H 'content-type: application/json' \
+  -d '{"lat": 29.7604, "lng": -95.3698, "preset": "flood_risk"}' | jq
+```
+
+## Response (200)
+
+```json
+{
+  "lat": 40.7128,
+  "lng": -74.006,
+  "fetched_at": "2026-05-24T22:15:11.420Z",
+  "fields": {
+    "elevation": {
+      "value": 13.15,
+      "unit": "meters",
+      "source": "USGS_3DEP",
+      "source_url": "https://www.usgs.gov/3d-elevation-program",
+      "confidence": "HIGH",
+      "fetched_at": "2026-05-24T22:15:10.110Z",
+      "ttl_seconds": 31536000,
+      "notes": null
+    },
+    "coast_distance_m": {
+      "value": 412.7,
+      "unit": "meters",
+      "source": "NOAA_CUSP",
+      "source_url": "https://shoreline.noaa.gov/data/datasheets/cusp.html",
+      "confidence": "HIGH",
+      "fetched_at": "2026-05-24T22:15:10.880Z",
+      "ttl_seconds": 31536000,
+      "notes": null
+    }
+  },
+  "partial_failures": []
+}
+```
+
+<ResponseField name="fetched_at" type="string">
+  ISO 8601 UTC timestamp of when the response was assembled.
+</ResponseField>
+
+<ResponseField name="fields" type="object">
+  Object keyed by field name. Each key corresponds to a field you requested (or one expanded from your preset). Fields that failed to fetch are omitted here and listed in `partial_failures` instead.
+
+  <Expandable title="per-field object">
+    <ResponseField name="fields.<name>.value" type="varies">
+      The field value. Type matches the catalog definition: `float`, `int`, `bool`, `string`, or an object for complex fields like `primary_building`.
+    </ResponseField>
+
+    <ResponseField name="fields.<name>.unit" type="string | null">
+      SI unit string (e.g., `"meters"`, `"percent"`), or `null` for dimensionless and enum fields.
+    </ResponseField>
+
+    <ResponseField name="fields.<name>.source" type="string">
+      Source agency identifier (e.g., `USGS_3DEP`, `NOAA_CUSP`).
+    </ResponseField>
+
+    <ResponseField name="fields.<name>.source_url" type="string">
+      Canonical upstream HTTPS URL for the dataset. You can use this to re-fetch or verify the value independently.
+    </ResponseField>
+
+    <ResponseField name="fields.<name>.confidence" type="string">
+      Per-field confidence: `HIGH`, `MEDIUM`, or `LOW`.
+    </ResponseField>
+
+    <ResponseField name="fields.<name>.fetched_at" type="string">
+      ISO 8601 UTC timestamp of when this specific field was fetched from its source.
+    </ResponseField>
+
+    <ResponseField name="fields.<name>.ttl_seconds" type="integer">
+      How long this value is considered fresh, in seconds. Use this as the TTL for your own cache layer. Ranges from ~7 days (Sentinel-2 NDVI) to ~1 year (USGS elevation, Census boundaries).
+    </ResponseField>
+
+    <ResponseField name="fields.<name>.notes" type="string | null">
+      Human-readable notes from the source (e.g., cloud-screening caveats for NDVI), or `null`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="partial_failures" type="array">
+  Array of fields that could not be fetched. The response is still 200 — successful fields are always returned even when some fail.
+</ResponseField>
+
+## Partial failures
+
+A 200 response can still contain failed fields. When any source is unavailable or returns no data at your coordinate, those fields appear in `partial_failures` instead of being silently dropped.
+
+```json
+{
+  "partial_failures": [
+    {
+      "field": "lcms_class",
+      "source": "USFS_LCMS",
+      "error": "TimeoutError: source timed out after 10s",
+      "retryable": true
+    }
+  ]
+}
+```
+
+Check `partial_failures` after every request. If `retryable` is `true`, the source was temporarily unavailable — retry after a brief delay. If `retryable` is `false`, the source returned a permanent error (for example, the coordinate has no coverage for that field) and retrying will not help.
+
+## Presets
+
+Use a preset to request a predefined bundle of related fields in a single call.
+
+| Preset | Fields |
+|--------|--------|
+| `terrain` | `elevation`, `slope_degrees`, `aspect_cardinal`, `soil_drainage_class`, `bedrock_depth_cm` |
+| `flood_risk` | `elevation`, `within_floodplain_polygon`, `coast_distance_m`, `surface_water_permanence_pct`, `nearest_waterbody_name`, `intersects_wetland` |
+| `wildfire_underwrite` | `lcms_class`, `tree_canopy_pct`, `ndvi_current`, `ndvi_change_5y`, `slope_degrees`, `elevation` |
+| `land_cover` | `lcms_class`, `land_use_class`, `tree_canopy_pct`, `cdl_class`, `dominant_crop_5y` |
+| `site_selection` | `elevation`, `slope_degrees`, `nearest_major_road_distance_m`, `nearest_transmission_line_distance_m`, `lcms_class`, `within_floodplain_polygon` |
+| `building_lookup` | `primary_building`, `nearby_buildings_count`, `nearest_major_road`, `nearest_bridge` |
+| `utilities` | `nearest_power_plant`, `nearest_transmission_line`, `nearest_gas_pipeline`, `nearest_petroleum_pipeline`, `nearest_rail_line`, `nearest_airport`, `nearest_port` |
+| `boundaries` | `political_region`, `political_county`, `political_locality`, `tract_geoid`, `block_group_geoid`, `conservation_easement` |
+
+To add fields beyond a preset, include both `preset` and `fields` in the same request — the two are unioned and deduplicated.
+
+## Error responses
+
+| Status | Error code | Meaning |
+|--------|------------|---------|
+| 400 | `coord_out_of_bounds` | Coordinate is outside the US envelope. |
+| 400 | `fields_unknown` | One or more field names are not in the catalog. The response includes a `fields_unknown` array listing them. |
+| 400 | `fields_too_many` | More than 50 fields were requested after preset expansion. Split into multiple requests. |
+| 400 | `no_fields_requested` | Neither `fields` nor `preset` was provided. |
+| 500 | `internal` | Orchestrator crash. |
+
+See the [error reference](/api-reference/errors) for full error shapes and recovery guidance.

@@ -1,0 +1,120 @@
+---
+title: "Provenance: per-field citations in every response"
+description: "Every Mireye field includes source, source_url, fetched_at, and confidence — a complete provenance trail for regulators and auditors to verify any value."
+---
+
+Every field Mireye returns is wrapped in provenance metadata: the source agency that produced the value, a canonical upstream URL where that data lives, the timestamp when Mireye fetched it, and a confidence rating. This means you never receive a bare number from Mireye — you receive a value and everything needed to challenge or re-verify it. Regulators, underwriters, and auditors can trace any field back to its originating federal dataset without involving Mireye at all.
+
+## What provenance looks like
+
+The following example shows the `elevation` field as it appears in a `/v1/fetch` response. All other fields follow the same shape.
+
+```json
+{
+  "elevation": {
+    "value": 13.15,
+    "unit": "meters",
+    "source": "USGS_3DEP",
+    "source_url": "https://www.usgs.gov/3d-elevation-program",
+    "confidence": "HIGH",
+    "fetched_at": "2026-05-24T22:15:10.110Z",
+    "ttl_seconds": 31536000,
+    "notes": null
+  }
+}
+```
+
+## Provenance fields
+
+Every field object in a `/v1/fetch` response includes these provenance fields alongside `value` and `unit`.
+
+<ResponseField name="source" type="string">
+  Short identifier for the agency or dataset that produced this value. Examples: `USGS_3DEP`, `NOAA_CUSP`, `USFWS_NWI`. Use this value to look up the full dataset details in the field catalog.
+</ResponseField>
+
+<ResponseField name="source_url" type="string">
+  Canonical upstream URL for the dataset. Always points to the originating agency — never a local path. Use this to navigate directly to the source dataset for independent verification.
+</ResponseField>
+
+<ResponseField name="fetched_at" type="string">
+  ISO 8601 UTC timestamp of when Mireye fetched this value from the upstream source. Use this as the authoritative "as-of" time for the value — more precise than the per-response `ttl_seconds` hint.
+</ResponseField>
+
+<ResponseField name="confidence" type="string">
+  Data quality rating: `HIGH`, `MEDIUM`, or `LOW`. See [Confidence ratings](/concepts/confidence) for the full definition of each level.
+</ResponseField>
+
+<ResponseField name="ttl_seconds" type="integer">
+  How long this value is considered fresh, in seconds. Derived from the upstream source's update cadence. Use this to set your own downstream cache TTL. The `fetched_at` timestamp is the authoritative reference; `ttl_seconds` is a recommendation, not a guarantee.
+</ResponseField>
+
+<ResponseField name="notes" type="string or null">
+  Human-readable notes about the value or the fetch conditions. Present when Mireye needs to surface something a consumer should know — for example, that a building join was made via geometric overlap with a given confidence score. `null` when there is nothing to note.
+</ResponseField>
+
+<Note>
+  When `source_url` points to a federal agency URL, anyone can navigate to that URL and re-fetch the raw data to independently verify the value Mireye returned. This is the core of the provenance guarantee.
+</Note>
+
+## Citations in /v1/ask responses
+
+`/v1/ask` responses include a top-level `citations` array that aggregates one entry per source used across all fields in the answer. Each entry identifies the source, lists which fields it provided, and carries its own provenance metadata — the same trust signal as individual field provenance in `/v1/fetch`.
+
+```json
+{
+  "answer": "This Manhattan address is not currently in a designated 100-year floodplain per USGS NHDPlus data, but it sits 764 m from the East River shoreline at an elevation of only 13.15 m.",
+  "confidence": "HIGH",
+  "citations": [
+    {
+      "source": "USGS_3DEP",
+      "source_url": "https://www.usgs.gov/3d-elevation-program",
+      "fields": ["elevation"],
+      "fetched_at": "2026-05-24T22:14:01.882Z",
+      "confidence": "HIGH"
+    },
+    {
+      "source": "USGS_NHDPLUS_HR",
+      "source_url": "https://hydro.nationalmap.gov/arcgis/rest/services/NHDPlus_HR/MapServer",
+      "fields": ["within_floodplain_polygon", "nearest_waterbody_name"],
+      "fetched_at": "2026-05-24T22:14:02.310Z",
+      "confidence": "HIGH"
+    },
+    {
+      "source": "NOAA_CUSP",
+      "source_url": "https://shoreline.noaa.gov/data/datasheets/cusp.html",
+      "fields": ["coast_distance_m"],
+      "fetched_at": "2026-05-24T22:14:01.990Z",
+      "confidence": "HIGH"
+    }
+  ],
+  "fields_used": ["elevation", "within_floodplain_polygon", "nearest_waterbody_name", "coast_distance_m"]
+}
+```
+
+The `fields` array in each citation entry lists every field that source provided to the answer. To re-verify an answer, pass those field names to `/v1/fetch` at the same coordinate and compare the values.
+
+## Partial failures
+
+When Mireye cannot fetch a field, it reports the failure explicitly in the `partial_failures` array rather than silently omitting the field or substituting a zero. The response still returns HTTP 200 with all fields that succeeded.
+
+```json
+{
+  "partial_failures": [
+    {
+      "field": "lcms_class",
+      "source": "USFS_LCMS",
+      "error": "TimeoutError: source timed out after 10s",
+      "retryable": true
+    }
+  ]
+}
+```
+
+Each entry in `partial_failures` includes:
+
+- **`field`** — the catalog name of the field that could not be fetched.
+- **`source`** — the source that was attempted.
+- **`error`** — a human-readable description of what went wrong.
+- **`retryable`** — `true` if a transient upstream error makes a retry likely to succeed; `false` for permanent failures such as a deprecated endpoint.
+
+If a field appears in `partial_failures`, it will not appear in the `fields` object. You can detect missing fields by diffing your requested field names against the keys in `fields`, or by reading `partial_failures` directly.

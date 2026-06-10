@@ -1,0 +1,63 @@
+---
+title: "Understanding confidence ratings: HIGH, MEDIUM, LOW"
+description: "Mireye rates every field HIGH, MEDIUM, or LOW. Learn what each confidence level means and how to act on it in regulatory and underwriting workflows."
+---
+
+Mireye attaches a confidence rating to every field value it returns. The rating is a three-bucket string — `HIGH`, `MEDIUM`, or `LOW` — not a numeric score. A string is easier to interpret in dashboards, reports, and audit trails, and easier to act on without requiring statistical literacy. Every field in a `/v1/fetch` response and every citation in a `/v1/ask` response carries its own confidence rating, so you can evaluate data quality at the field level rather than relying on a single summary signal.
+
+## The three confidence levels
+
+<CardGroup cols={3}>
+  <Card title="HIGH" icon="circle-check">
+    Value fetched from the authoritative source with no known issues. The returned value matches the documented precision and coverage for that source. This is the expected level for most fields under normal conditions.
+  </Card>
+  <Card title="MEDIUM" icon="circle-half-stroke">
+    Value fetched successfully, but from a fallback source rather than the primary one, or the primary source has partial coverage at this coordinate. The value is usable but carries additional uncertainty.
+  </Card>
+  <Card title="LOW" icon="circle-exclamation">
+    Value is present but derived indirectly or sourced from a lower-resolution dataset. For example, a coarser national raster used when a higher-resolution regional dataset has a gap. Treat LOW-confidence values with caution before using them in decisions.
+  </Card>
+</CardGroup>
+
+## Confidence on /v1/ask responses
+
+`/v1/ask` responses include a top-level `confidence` field that summarizes across all citations used to construct the answer.
+
+<Note>
+  The overall `confidence` of an `/v1/ask` response reflects the weakest citation: if all citations are `HIGH`, the overall is `HIGH`; any `MEDIUM` or `LOW` citation pulls the overall down to match. If you need field-level detail, inspect the individual `confidence` value in each citation object rather than relying on the top-level summary.
+</Note>
+
+For example, an answer that draws on three `HIGH`-confidence fields and one `MEDIUM`-confidence field returns `"confidence": "MEDIUM"` at the response level, even though most of the underlying data was high quality.
+
+## When confidence is UNKNOWN
+
+If Mireye reached the upstream source but the source returned a semantically null value — meaning no data exists for that coordinate rather than a fetch failure — the field value is `null` and confidence is `UNKNOWN`. This condition surfaces in the field's `notes` field with a plain-language explanation.
+
+```json
+{
+  "dominant_crop_5y": {
+    "value": null,
+    "unit": null,
+    "source": "USDA_CDL",
+    "source_url": "https://www.nass.usda.gov/Research_and_Science/Cropland/",
+    "confidence": "UNKNOWN",
+    "fetched_at": "2026-05-24T22:15:10.110Z",
+    "ttl_seconds": 2592000,
+    "notes": "Point is in a non-cultivated area; CDL reports no crop class."
+  }
+}
+```
+
+Semantic nulls are not the same as `partial_failures`. A semantic null means Mireye reached the source and the source confirmed there is no value for this location. A `partial_failure` means Mireye could not reach the source at all. Both conditions are always surfaced explicitly — Mireye never silently drops a field or substitutes a placeholder.
+
+## Using confidence in your application
+
+How you act on confidence depends on your use case:
+
+- **Regulatory and audit workflows**: Filter to `HIGH`-confidence fields only before including values in a filing, report, or compliance record. If a required field does not return `HIGH`, flag it for manual review rather than proceeding with a lower-quality value.
+- **Exploratory and screening workflows**: `MEDIUM` confidence is generally acceptable when you are triaging a large portfolio or doing initial site selection. Use the results to narrow the candidate set, then pull `HIGH`-confidence data for the shortlisted sites.
+- **Underwriting and lending decisions**: Flag any `LOW`-confidence value for human review before it enters a pricing model or credit decision. Document the flag and the reviewer's resolution in your audit trail. Do not substitute a `LOW`-confidence value for a missing `HIGH`-confidence one without explicit sign-off.
+
+<Tip>
+  For batch workflows that process many coordinates, filter the response at read time using the `confidence` field on each value object. This lets you route `HIGH` values to automated pipelines and `MEDIUM`/`LOW` values to a review queue without making separate API calls.
+</Tip>

@@ -1,0 +1,130 @@
+---
+title: "Install the Mireye Earth MCP server for agents"
+description: "Install the Mireye Earth MCP server and configure it for Claude Desktop, Cursor, or a custom Python agent to query US geospatial data."
+---
+
+The Mireye Earth MCP server exposes the `ask` and `fetch` operations as native MCP tools. Install it once and any MCP-aware agent — Claude Desktop, Cursor, or your own Python client — can query geospatial data for US coordinates without writing HTTP code.
+
+<Tabs>
+  <Tab title="Claude Desktop">
+    <Steps>
+      <Step title="Install the server">
+        Install from GitHub using `uv`:
+
+        ```bash
+        uv pip install 'mireye-earth[mcp] @ git+https://github.com/mireye/mireye-earth'
+        ```
+
+        Or from a local clone:
+
+        ```bash
+        uv pip install -e '.[mcp]'
+        ```
+      </Step>
+      <Step title="Add the server to your Claude Desktop config">
+        Edit the Claude Desktop config file:
+
+        - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+        - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+        Add the `mireye-earth` entry under `mcpServers`:
+
+        ```json
+        {
+          "mcpServers": {
+            "mireye-earth": {
+              "command": "mireye-earth-mcp"
+            }
+          }
+        }
+        ```
+      </Step>
+      <Step title="Restart Claude Desktop">
+        Restart Claude Desktop. Two tools appear under the 🔌 menu: `ask` and `fetch`.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Cursor">
+    <Steps>
+      <Step title="Install the server">
+        Install from GitHub using `uv`:
+
+        ```bash
+        uv pip install 'mireye-earth[mcp] @ git+https://github.com/mireye/mireye-earth'
+        ```
+
+        Or from a local clone:
+
+        ```bash
+        uv pip install -e '.[mcp]'
+        ```
+      </Step>
+      <Step title="Add the server to your Cursor MCP config">
+        Edit the Cursor MCP config file:
+
+        - **Global**: `~/.cursor/mcp.json`
+        - **Workspace**: `<repo>/.cursor/mcp.json`
+
+        Add the `mireye-earth` entry under `mcpServers`:
+
+        ```json
+        {
+          "mcpServers": {
+            "mireye-earth": {
+              "command": "mireye-earth-mcp"
+            }
+          }
+        }
+        ```
+      </Step>
+      <Step title="Confirm the tools are active">
+        Open **Cursor → Settings → MCP** and confirm `mireye-earth` shows two green tools.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Custom agent">
+    After installing the server (see the Claude Desktop tab for the install command), connect to it using the `mcp` Python SDK:
+
+    ```python
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    params = StdioServerParameters(command="mireye-earth-mcp")
+
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tools = await session.list_tools()
+            # tools.tools is [ask, fetch]
+
+            result = await session.call_tool(
+                "ask",
+                {"lat": 40.7128, "lng": -74.0060, "question": "What is the elevation here?"},
+            )
+    ```
+  </Tab>
+</Tabs>
+
+## Configuration
+
+Both tools share the same configuration, set via environment variables on the MCP server process:
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `MIREYE_BASE_URL` | `https://mireye-earth.fly.dev` | HTTP base URL the tools POST to |
+| `MIREYE_TIMEOUT_S` | `60` | Per-request timeout in seconds |
+
+Pass env vars to the server process through the `env` key in your MCP config:
+
+```json
+{
+  "mcpServers": {
+    "mireye-earth": {
+      "command": "mireye-earth-mcp",
+      "env": {
+        "MIREYE_BASE_URL": "https://your-deploy.example.com"
+      }
+    }
+  }
+}
+```

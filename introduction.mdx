@@ -1,0 +1,59 @@
+---
+title: "Mireye Earth: Geospatial data with federal citations"
+description: "Mireye Earth answers geospatial questions about US coordinates with authoritative federal-source citations. Every field carries provenance you can audit."
+---
+
+Mireye Earth is a geospatial data API that returns provenance-tagged terrain, risk, and environmental data for any US coordinate. Every value — elevation, flood-zone status, wildfire fuel load, building footprint, parcel zoning — comes with a source agency, source URL, fetch timestamp, and confidence rating, so insurers, lenders, and AI agents have an audit trail, not just a number.
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Make your first API call in five minutes with no SDK required.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference/ask">
+    Full endpoint schemas with request and response examples.
+  </Card>
+  <Card title="MCP Integration" icon="plug" href="/mcp/installation">
+    Wire Mireye into Claude Desktop, Cursor, or a custom agent.
+  </Card>
+  <Card title="Use Cases" icon="compass" href="/use-cases/insurance">
+    Underwriting, lending, and AI agent workflow examples.
+  </Card>
+</CardGroup>
+
+## What Mireye Earth provides
+
+Two HTTP endpoints and one MCP server share the same 47-field catalog and the same provenance model:
+
+- **`POST /v1/ask`** — Ask a natural-language question about a US coordinate. A planner selects the relevant fields, fetches them in parallel, and a synthesizer writes a cited prose answer. Latency: 2–6 s warm.
+- **`POST /v1/fetch`** — Request specific named fields or a use-case preset. Returns raw values with per-field provenance and a `partial_failures` array for anything that could not be fetched. Latency: 1–3 s warm.
+- **`GET /v1/meta/fields`** — The public field and preset catalog. ETag-cached, versioned, and machine-readable.
+- **MCP server** — The same `ask` and `fetch` operations exposed as MCP tools for Claude Desktop, Cursor, and custom agents.
+
+The live API is at `https://mireye-earth.fly.dev`. Interactive Swagger is at `https://mireye-earth.fly.dev/v1/docs`.
+
+## Why it's different
+
+<CardGroup cols={2}>
+  <Card title="Federal sources only" icon="building-columns">
+    USGS, NOAA, USDA, USFS, USFWS, EPA, EIA, FAA, FHWA, BTS, and the US Census Bureau. No proprietary risk scores, no third-party data brokers, no AI-derived values.
+  </Card>
+  <Card title="Per-field citations" icon="file-shield">
+    Every value carries `source`, `source_url`, `fetched_at`, and `confidence`. A regulator or underwriter can re-fetch each citation independently to verify.
+  </Card>
+  <Card title="Honest failure semantics" icon="circle-info">
+    Fields that could not be fetched surface in `partial_failures` with a `retryable` flag. Mireye never silently drops a value or substitutes a zero.
+  </Card>
+  <Card title="MCP-native" icon="plug">
+    Any MCP-aware agent gets the full product surface as two native tools — no HTTP wiring required.
+  </Card>
+</CardGroup>
+
+## Coverage
+
+- **Geography**: United States only — lower 48, Alaska, Hawaii, and US territories. Accepted envelope: `lat ∈ [18, 72]`, `lng ∈ [-180, -65]`. Requests outside this range return `400 coord_out_of_bounds`.
+- **Fields**: 47 fields across 5 layers — terrain, land cover, built environment, utilities, and parcels. See the [field catalog](/api-reference/field-catalog) for the full list.
+- **Presets**: 8 use-case bundles (`flood_risk`, `wildfire_underwrite`, `site_selection`, `terrain`, `land_cover`, `building_lookup`, `utilities`, `boundaries`).
+
+## Data sources
+
+Mireye queries only authoritative federal datasets — USGS 3DEP, NHDPlus HR, and PAD-US; NOAA CUSP; USDA SSURGO and CDL; USFS LCMS and NLCD; USFWS NWI; EPA SDWIS; EIA Energy Atlas; FAA NASR; FHWA NBI; and US Census TIGER. Every `source_url` points back to the originating agency so you can independently verify any value.

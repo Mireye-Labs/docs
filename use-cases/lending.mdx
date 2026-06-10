@@ -1,0 +1,69 @@
+---
+title: "Mortgage and property lending due diligence"
+description: "Pull floodplain status, easements, and building data for mortgage origination and title — with federal-source citations for compliance audits."
+---
+
+Lenders, title companies, and escrow processors need property risk data with a verifiable audit trail. A data point buried in a vendor's proprietary model is a liability when an auditor samples your loan file in eighteen months. Mireye Earth returns floodplain status, conservation easement flags, parcel boundary context, and environmental indicators sourced directly from federal datasets — USGS, USDA, NOAA, and the US Census Bureau — with per-field provenance on every value. When an auditor asks where a figure came from, you point them to the `source_url`.
+
+## Key fields for lending
+
+| Field | What it answers |
+|---|---|
+| `within_floodplain_polygon` | Is the property inside a floodplain polygon? Supports flood-insurance disclosure requirements. (USGS NHDPlus HR) |
+| `intersects_conservation_easement` | Does the parcel intersect a recorded conservation easement? Disclosure may be required before close. (USGS PAD-US) |
+| `coast_distance_m` | Distance to the nearest shoreline — determines whether coastal hazard insurance is required. (NOAA CUSP) |
+| `soil_drainage_class` | NRCS hydrologic group for the parcel — a signal for foundation drainage risk on collateral assessment. (USDA SSURGO) |
+| `primary_building` | Building height, footprint area, and FEMA occupancy class — inputs for replacement-cost and collateral value estimates. (Overture + FEMA USA Structures) |
+| `tract_geoid`, `political_county` | Census tract GEOID and county name for geographic compliance reporting and CRA mapping. (US Census TIGER) |
+
+## Floodplain disclosure check
+
+Fetch floodplain status and coastal proximity in one call:
+
+```bash
+curl -s https://mireye-earth.fly.dev/v1/fetch \
+  -H 'content-type: application/json' \
+  -d '{
+    "lat": 30.2672,
+    "lng": -97.7431,
+    "fields": ["within_floodplain_polygon", "coast_distance_m", "surface_water_permanence_pct"]
+  }' | jq
+```
+
+`within_floodplain_polygon` returns a boolean sourced from USGS NHDPlus HR. The `source_url` in the response links directly to the USGS dataset, so any party to the transaction can verify the floodplain determination independently.
+
+<Note>
+`within_floodplain_polygon` is derived from the USGS NHDPlus HR hydrography layer, not the FEMA National Flood Hazard Layer (NFHL). For regulatory flood-insurance determinations, use the FEMA NFHL. Mireye's value is a useful pre-screen and a citable data point, but it does not substitute for a Standard Flood Hazard Determination.
+</Note>
+
+## Property boundary and easement lookup
+
+The `boundaries` preset returns census boundaries, county and locality identifiers, census tract GEOID, and conservation easement status in one call:
+
+```bash
+curl -s https://mireye-earth.fly.dev/v1/fetch \
+  -H 'content-type: application/json' \
+  -d '{"lat": 39.9526, "lng": -75.1652, "preset": "boundaries"}' | jq
+```
+
+If `intersects_conservation_easement` returns `true`, the `source_url` points to USGS PAD-US, the federal protected-areas database, so you can pull the easement holder and extent directly from the source before ordering a title search.
+
+## Natural-language question for loan officers
+
+Use `/v1/ask` when a loan officer needs a plain-language answer to include in a credit memo. The planner picks the relevant fields automatically and returns a cited narrative response.
+
+```bash
+curl -s https://mireye-earth.fly.dev/v1/ask \
+  -H 'content-type: application/json' \
+  -d '{
+    "lat": 30.2672,
+    "lng": -97.7431,
+    "question": "Is this property in a floodplain or near conservation easements?"
+  }' | jq
+```
+
+The `answer` field is ready to paste into a memo. The `citations` array carries `source`, `source_url`, and `fetched_at` for every value referenced, so the narrative is independently verifiable without re-querying Mireye.
+
+<Tip>
+Long-lived services — origination platforms, title processing queues — should `GET /v1/meta/fields` once at startup and cache the response for one hour using the `ETag`. This keeps your field names validated against the live catalog so unknown-field errors don't surface mid-pipeline.
+</Tip>

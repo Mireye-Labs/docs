@@ -1,0 +1,105 @@
+---
+title: "Using Mireye Earth in AI agents and pipelines"
+description: "Integrate Mireye into AI agents via the MCP server or direct HTTP API for geospatial reasoning with cited, reproducible answers grounded in federal data."
+---
+
+AI agents that reason about physical locations need authoritative, reproducible data — not LLM-hallucinated approximations. Mireye Earth provides two integration paths: the MCP server for tool-calling agents (Claude Desktop, Cursor, and any MCP-aware client), and the HTTP API for custom pipelines that need direct, structured access.
+
+## Why LLMs need Mireye
+
+LLMs are trained on text about places, not on geospatial primitives. Ask an LLM for the precise elevation at a coordinate and you'll get a hallucination, a refusal, or a Wikipedia snippet about a nearby city. Mireye returns `13.15 meters` from USGS EPQS with a `source_url` and a `fetched_at` timestamp — values that are authoritative, reproducible, and auditable. For any agent that needs to make claims about the physical world, that difference is the whole point.
+
+## MCP integration (Claude Desktop, Cursor)
+
+Install the MCP server with `uv`:
+
+```bash
+uv pip install 'mireye-earth[mcp]'
+```
+
+Add the server to your Claude Desktop config at `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "mireye-earth": {
+      "command": "mireye-earth-mcp"
+    }
+  }
+}
+```
+
+Restart Claude Desktop. Two tools appear: `ask` and `fetch`. The agent calls them like any other MCP tool — no HTTP wiring, no field catalog management, no prompt engineering required. The MCP server handles the transport layer so your agent gets cited geospatial answers without any additional infrastructure.
+
+See [/mcp/tools](/mcp/tools) for full tool schemas, including all accepted parameters and the response shape for both tools.
+
+## HTTP API integration
+
+For custom pipelines that don't run an MCP client, call `/v1/ask` directly over HTTP. Here is a minimal Python helper using `httpx`:
+
+```python
+import httpx
+
+BASE = "https://mireye-earth.fly.dev"
+
+def ask_mireye(lat: float, lng: float, question: str) -> dict:
+    resp = httpx.post(
+        f"{BASE}/v1/ask",
+        json={"lat": lat, "lng": lng, "question": question},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+result = ask_mireye(40.7128, -74.0060, "Is this property at flood risk?")
+print(result["answer"])
+# -> "This Manhattan address is not currently in a 100-year floodplain..."
+for citation in result["citations"]:
+    print(citation["source"], citation["source_url"])
+```
+
+The `citations` array gives your agent the full provenance chain for every value referenced in the answer — source name, source URL, and fetch timestamp. If your pipeline needs to store or surface citations downstream, they arrive already structured.
+
+## Using /v1/fetch for structured pipelines
+
+When your pipeline needs raw field values rather than a narrative answer, use `/v1/fetch`. You get deterministic, typed values with per-field provenance:
+
+```python
+def fetch_fields(lat: float, lng: float, fields: list[str]) -> dict:
+    resp = httpx.post(
+        f"{BASE}/v1/fetch",
+        json={"lat": lat, "lng": lng, "fields": fields},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+data = fetch_fields(40.7128, -74.0060, ["elevation", "within_floodplain_polygon", "coast_distance_m"])
+elevation = data["fields"]["elevation"]["value"]               # 13.15
+in_flood  = data["fields"]["within_floodplain_polygon"]["value"]  # False
+```
+
+Always check `data["partial_failures"]` before consuming results. This array tells you which fields failed to fetch and whether each failure is retryable — without crashing the overall call. A field that times out shows up here, not as a silent zero or a missing key.
+
+## Batch scoring
+
+To score a list of coordinates, iterate over the list and call `/v1/fetch` for each with your chosen preset. Use `asyncio` and an async HTTP client for throughput:
+
+```python
+import asyncio, httpx
+
+async def fetch_batch(coords: list[tuple[float, float]], preset: str) -> list[dict]:
+    async with httpx.AsyncClient(base_url=BASE, timeout=30) as client:
+        tasks = [
+            client.post("/v1/fetch", json={"lat": lat, "lng": lng, "preset": preset})
+            for lat, lng in coords
+        ]
+        responses = await asyncio.gather(*tasks)
+    return [r.json() for r in responses]
+```
+
+Mireye caches responses server-side, so repeated queries for the same coordinate return quickly — useful when you run the same portfolio through scoring more than once, or when multiple pipeline stages query overlapping coordinates.
+
+<Note>
+The field catalog at `GET /v1/meta/fields` is machine-readable and ETag-cached with a one-hour `max-age`. Agents that plan field selection dynamically — such as agents that build `fields` arrays from user intent — should fetch the catalog once at startup and cache it locally for the session.
+</Note>
